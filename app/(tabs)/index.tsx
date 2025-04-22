@@ -1,74 +1,130 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { StyleSheet, View, Text, Alert, TouchableOpacity } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { NetworkInfo } from 'react-native-network-info';
+import { useEffect, useState } from 'react';
+import { requestPermissions } from '@/utils/android/requestPermissions';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+export default function Index() {
+  const [isConnectedToBTS, setIsConnectedToBTS] = useState(false);
 
-export default function HomeScreen() {
+  // useEffect(() => {
+  //   // Verifica o SSID da rede Wi-Fi
+  //   async function checkSSID() {
+  //     const hasPermission = await requestPermissions()
+  //     if (!hasPermission) {
+  //       return
+  //     }
+
+  //     NetworkInfo.getBSSID().then(ssid => {
+  //       if (ssid === 'bts') {
+  //         setIsConnectedToBTS(true);
+  //       } else {
+  //         Alert.alert('Aviso', 'Você não está conectado à rede Wi-Fi "bts".');
+  //         setIsConnectedToBTS(false);
+  //       }
+  //     });
+  //   }
+  //   checkSSID();
+  // }, []);
+
+  const streamUrl1 = 'http://191.168.1.70:8888/live/stream1/stream.m3u8'; // Replace with your actual stream URL
+  const streamUrl2 = 'http://191.168.1.70:8888/live/stream2/stream.m3u8'
+
+  const player1 = useVideoPlayer(streamUrl1, player => {
+    player.loop = true;
+    player.play()
+  });
+  const player2 = useVideoPlayer(streamUrl2, player => {
+    player.loop = true;
+    player.play()
+  });
+
+  function handleRefresh() {
+    NetworkInfo.getSSID().then(ssid => {
+      console.log(ssid);
+      if (ssid === 'bts') {
+        setIsConnectedToBTS(true);
+      } else {
+        Alert.alert('Aviso', 'Você não está conectado à rede Wi-Fi "bts".');
+        setIsConnectedToBTS(false);
+      }
+    });
+  }
+
+  // 
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+    <View style={styles.container}>
+      <Text style={styles.title}>Cameras ao vivo</Text>
+      <View style={styles.cameraView}>
+        <VideoView
+          player={player1}
+          allowsFullscreen
+          style={styles.video}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        <View style={styles.videoDetails}>
+          <Text style={styles.cameraText}>Camera 1</Text>
+        </View>
+      </View>
+      <View style={styles.cameraView}>
+        <VideoView
+          player={player2}
+          style={styles.video}
+        />
+        <View style={styles.videoDetails}>
+          <Text style={styles.cameraText}>Camera 2</Text>
+        </View>
+
+      </View>
+
+    </View>
+
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: '#0b0809',
+  },
+  title: {
+    color: 'white',
+    fontSize: 20,
+    textAlign: 'center',
+    marginVertical: 10,
+  },
+  cameraView: {
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+  },
+
+
+  video: {
+    alignSelf: 'center',
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: 'black',
+    borderTopEndRadius: 10,
+    borderTopStartRadius: 10,
+  },
+  videoDetails: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    padding: 10,
+    backgroundColor: '#2f3034',
+    borderBottomEndRadius: 10,
+    borderBottomStartRadius: 10,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  cameraText: {
+    color: 'white',
+    fontSize: 16,
+    marginTop: 2,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  warningText: {
+    color: 'red',
+    fontSize: 18,
+    textAlign: 'center',
+    marginHorizontal: 20,
+  }
+
 });

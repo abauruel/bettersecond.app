@@ -9,13 +9,15 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.abauruel.bettersecondsapp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.abauruel.bettersecondsapp"
     },
     "web": {
       "bundler": "metro",
@@ -32,7 +34,19 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      [
+        "expo-video",
+        {
+          "ios": {
+            "includeVLCKit": false
+          },
+          "android": {
+            "legacyJetifier": false
+          }
+        }
+      ],
+      "react-native-vlc-media-player"
     ],
     "experiments": {
       "typedRoutes": true
