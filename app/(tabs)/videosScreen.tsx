@@ -24,7 +24,7 @@ export default function VideoPlayerScreen() {
 
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const host = 'http://192.168.1.70:3333';
+  const host = 'http://10.42.0.1:3333';
   const apiUrl = `${host}/api/videos`;
 
   const player = useVideoPlayer(`${host}${selectedVideo?.url}` || 'empty', player => {
