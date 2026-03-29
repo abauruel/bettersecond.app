@@ -1,274 +1,755 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, Text, Image, Alert } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import axios, { AxiosResponse } from 'axios';
-import * as FileSystem from 'expo-file-system';
-import * as Linking from 'expo-linking';
-import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Text, ActivityIndicator, RefreshControl, Modal, Alert, TextInput } from 'react-native';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import Ionicons from 'react-native-vector-icons/Ionicons';
-
-// Define a estrutura de um item de vídeo
-interface VideoItem {
-  url?: string;
-  thumbnail?: string;
-  name?: string;
+// Define a estrutura dos dados de health
+interface HealthData {
+  status?: string;
+  uptime?: number;
+  timestamp?: string;
+  [key: string]: any; // Permite outros campos dinâmicos
 }
 
-
-
-export default function VideoPlayerScreen() {
-  // const { uri, title } = route.params;
+export default function HealthScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [showActionsModal, setShowActionsModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [serverIP, setServerIP] = useState('192.168.1.187');
+  
+  const healthUrl = `http://${serverIP}:5000/health`;
+  const baseUrl = `http://${serverIP}:5000`;
 
-  const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
-  const [videos, setVideos] = useState<VideoItem[]>([]);
-  const host = 'http://10.42.0.1:3333';
-  const apiUrl = `${host}/api/videos`;
-
-  const player = useVideoPlayer(`${host}${selectedVideo?.url}` || 'empty', player => {
-    player.loop = true;
-    player.play();
-  });
-  async function fetchVideos() {
-    try {
-      setRefreshing(true);
-      const response: AxiosResponse<VideoItem[]> = await axios.get(apiUrl);
-      setVideos(response.data);
-    } catch (error: any) {
-      console.error("Erro ao buscar vídeos da API:", error.message);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
+  // Carregar IP salvo ao iniciar
   useEffect(() => {
-    fetchVideos();
+    loadServerIP();
   }, []);
 
-  function splitFileName(inputName: string | undefined) {
-    if (!inputName) {
-      return { fileName: 'Sem Título', formattedDate: '', formattedTime: '' };
-    }
-    const [fileName, datePart, timePart] = inputName.split('_')
-    const year = datePart.slice(0, 4);
-    const month = datePart.slice(4, 6);
-    const day = datePart.slice(6, 8);
-    const formattedDate = `${day}/${month}/${year}`;
-    const hour = timePart.slice(0, 2);
-    const minute = timePart.slice(2, 4);
-    const second = timePart.slice(4, 6);
-
-    const formattedTime = `${hour}:${minute}:${second}`;
-    return { fileName, formattedDate, formattedTime };
-  }
-
-  const renderItem = ({ item }: { item: VideoItem }) => (
-    <TouchableOpacity onPress={() => setSelectedVideo(item)} style={styles.item}>
-      {item.thumbnail ? <Image source={{ uri: `${host}${item.thumbnail}` }} style={styles.thumbnail} /> : <View style={styles.placeholderThumbnail} />}
-      <View style={styles.videoDetails}>
-        <Text style={styles.title}>{splitFileName(item.name).fileName || 'Sem Título'}</Text>
-        <Text style={styles.title}>{splitFileName(item.name).formattedDate || 'Sem Título'}</Text>
-        <Text style={styles.title}>{splitFileName(item.name).formattedTime || 'Sem Título'}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  async function handleShareWhatsApp() {
-    if (selectedVideo?.url) {
-      const videoUrl = `${host}${selectedVideo.url}`;
-      const fileUri = `${FileSystem.documentDirectory}${selectedVideo.name || 'video.mp4'}`;
-      try {
-        // Baixar o vídeo
-        const { uri } = await FileSystem.downloadAsync(videoUrl, fileUri);
-        console.log('Vídeo baixado em:', uri);
-
-        // Verificar se o compartilhamento é suportado
-        const isSharingAvailable = await Sharing.isAvailableAsync();
-        if (isSharingAvailable) {
-          // Compartilhar o arquivo via WhatsApp
-          await Sharing.shareAsync(uri, {
-            mimeType: 'video/mp4',
-            dialogTitle: 'Compartilhar vídeo',
-          });
-        } else {
-          Alert.alert('Erro', 'O compartilhamento não é suportado neste dispositivo.');
-        }
-      } catch (error) {
-        console.error('Erro ao baixar ou compartilhar o vídeo:', error);
-        Alert.alert('Erro', 'Não foi possível compartilhar o vídeo.');
+  async function loadServerIP() {
+    try {
+      const savedIP = await AsyncStorage.getItem('@server_ip');
+      if (savedIP) {
+        setServerIP(savedIP);
+        console.log('[Health] IP carregado:', savedIP);
+        // Recarregar health com novo IP
+        setTimeout(() => fetchHealth(), 100);
+      } else {
+        fetchHealth();
       }
+    } catch (error) {
+      console.error('[Health] Erro ao carregar IP:', error);
+      fetchHealth();
     }
   }
 
-  async function handleDownload() {
-    if (selectedVideo?.url) {
-      const videoUrl = `${host}${selectedVideo.url}`;
-      const fileUri = `${FileSystem.documentDirectory}${selectedVideo.name || 'video.mp4'}`;
-
-      try {
-        // Baixar o vídeo para o diretório local
-        const { uri } = await FileSystem.downloadAsync(videoUrl, fileUri);
-
-        // Solicitar permissão para acessar a galeria
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permissão negada', 'É necessário permitir o acesso à galeria para salvar o vídeo.');
-          return;
-        }
-
-        // Salvar o vídeo na galeria
-        const asset = await MediaLibrary.createAssetAsync(uri);
-        const albumName = 'BetterSecondsApp';
-        await MediaLibrary.createAlbumAsync(albumName, asset, false);
-        Alert.alert('Download concluído', 'O vídeo foi salvo na galeria com sucesso!');
-      } catch (error) {
-        console.error('Erro ao baixar ou salvar o vídeo:', error);
-        Alert.alert('Erro', 'Não foi possível baixar ou salvar o vídeo.');
+  async function callAPI(endpoint: string, method: 'GET' | 'POST' | 'PUT' = 'POST', data?: any) {
+    try {
+      setActionLoading(true);
+      setActionFeedback(null);
+      console.log(`[API] ${method} ${endpoint}...`, data);
+      
+      const response = await axios({
+        method,
+        url: `${baseUrl}${endpoint}`,
+        data,
+        timeout: 10000,
+        validateStatus: (status) => status < 600, // Aceita qualquer status < 600
+      });
+      
+      console.log('[API] Resposta:', response.data);
+      
+      // Mensagem customizada para update_time
+      let feedbackMessage = response.data.message || 'Ação executada com sucesso!';
+      if (endpoint === '/update_time' && response.data.current_datetime) {
+        feedbackMessage = `Hora atualizada: ${response.data.current_datetime}`;
       }
+      
+      setActionFeedback({ 
+        message: feedbackMessage, 
+        type: 'success' 
+      });
+      
+      // Atualiza health após ações
+      setTimeout(() => fetchHealth(), 1000);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[API] Erro:', error.message);
+      setActionFeedback({ 
+        message: error.response?.data?.message || error.message || 'Erro ao executar ação', 
+        type: 'error' 
+      });
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  async function handleDelete(filename: string | undefined) {
-    if (!filename) return;
+  async function recordEvent(camera: 'cam1' | 'cam2', duration: number = 10) {
+    await callAPI(`/record/${camera}`, 'POST', { duration });
+  }
 
-    if (selectedVideo) {
-      Alert.alert(
-        'Confirmar exclusão',
-        'Tem certeza de que deseja excluir este vídeo?',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Excluir',
-            style: 'destructive',
-            onPress: async () => {
-              await axios.delete(`${host}/api/download/${filename}`)
-              setVideos(videos.filter((video) => video !== selectedVideo));
-              setSelectedVideo(null);
-              Alert.alert('Excluído', 'O vídeo foi excluído.');
-            },
-          },
-        ]
+  async function processTimestamps(daysBack: number = 3) {
+    await callAPI('/process_timestamps', 'POST', { days_back: daysBack });
+  }
+
+  async function updateTime() {
+    const now = new Date();
+    const currentTime = now.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    
+    Alert.alert(
+      'Sincronizar Hora',
+      `Deseja atualizar a hora do Raspberry Pi para:\n${currentTime}`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Sincronizar', 
+          onPress: () => {
+            // Formato ISO completo com timezone: 2026-03-28T15:30:45.123Z
+            const datetime = now.toISOString();
+            console.log('[updateTime] Enviando:', datetime);
+            callAPI('/update_time', 'POST', { datetime });
+          }
+        }
+      ]
+    );
+  }
+
+  async function shutdownSystem() {
+    Alert.alert(
+      'Desligar Sistema',
+      'Tem certeza que deseja desligar o Raspberry Pi? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Desligar', 
+          style: 'destructive', 
+          onPress: () => callAPI('/shutdown', 'POST', { delay: 10 }) 
+        }
+      ]
+    );
+  }
+
+  async function restartService() {
+    Alert.alert(
+      'Reiniciar Serviço',
+      'Deseja reiniciar o serviço Better Seconds?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Reiniciar', onPress: () => callAPI('/restart_service', 'POST') }
+      ]
+    );
+  }
+
+  async function fetchHealth() {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('[Health] Buscando dados de:', healthUrl);
+      
+      const response = await axios.get(healthUrl, {
+        timeout: 5000,
+        validateStatus: (status) => status < 600, // Aceita qualquer status < 600 (incluindo 503)
+      });
+      
+      console.log('[Health] Dados recebidos:', response.data);
+      setHealthData(response.data);
+    } catch (error: any) {
+      console.error('[Health] Erro ao buscar dados:', error.message);
+      setError(error.message || 'Erro ao conectar com o servidor');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  function toggleSection(key: string) {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  }
+
+  function formatUptime(seconds?: number): string {
+    if (!seconds) return 'N/A';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    parts.push(`${secs}s`);
+    
+    return parts.join(' ');
+  }
+
+  function formatTimestamp(timestamp?: string): string {
+    if (!timestamp) return 'N/A';
+    
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch {
+      return timestamp;
+    }
+  }
+
+  function renderValue(key: string, value: any, isCollapsed: boolean): React.ReactNode {
+    if (value === null || value === undefined) {
+      return <Text style={styles.valueText}>N/A</Text>;
+    }
+    
+    if (typeof value === 'boolean') {
+      return (
+        <Text style={[styles.valueText, { color: value ? '#999' : '#666' }]}>
+          {value ? 'Sim' : 'Não'}
+        </Text>
       );
     }
-  }
-  return (
-    <View style={styles.container}>
-      {selectedVideo ? (
-        <View style={styles.videoContainer}>
-          <VideoView
-            player={player}
-            style={styles.video}
-          />
-          <Text style={styles.videoTitle}>{`${splitFileName(selectedVideo.name).fileName} ${splitFileName(selectedVideo.name).formattedDate} ${splitFileName(selectedVideo.name).formattedTime}`}</Text>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity onPress={handleShareWhatsApp} style={styles.actionButton}>
-              <Ionicons name="logo-whatsapp" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleDownload} style={styles.actionButton}>
-              <Ionicons name="download-outline" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(selectedVideo?.name)} style={styles.actionButton}>
-              <Ionicons name="trash-outline" size={30} color="white" />
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity onPress={() => setSelectedVideo(null)} style={styles.backButton}>
-            <Text style={styles.backButtonText}>Voltar</Text>
-          </TouchableOpacity>
-        </View>
-      ) :
-        (<FlatList
-          data={videos}
-          renderItem={renderItem}
-          keyExtractor={item => item.name ? item.name.toString() : Math.random().toString()}
-          onRefresh={fetchVideos}
-          refreshing={refreshing}
-        />)
+    
+    if (typeof value === 'object') {
+      if (isCollapsed) {
+        return (
+          <Text style={styles.collapsedText}>
+            {Array.isArray(value) ? `[${value.length} items]` : `{${Object.keys(value).length} properties}`}
+          </Text>
+        );
       }
-    </View>
+      
+      return (
+        <View style={styles.nestedObject}>
+          {Object.entries(value).map(([nestedKey, nestedValue]) => (
+            <View key={nestedKey} style={styles.nestedRow}>
+              <Text style={styles.nestedKeyText}>{nestedKey}:</Text>
+              <Text style={styles.nestedValueText}>{JSON.stringify(nestedValue)}</Text>
+            </View>
+          ))}
+        </View>
+      );
+    }
+    
+    // Formatação especial para campos conhecidos
+    if (key === 'uptime' && typeof value === 'number') {
+      return <Text style={styles.valueText}>{formatUptime(value)}</Text>;
+    }
+    
+    if (key === 'timestamp' && typeof value === 'string') {
+      return <Text style={styles.valueText}>{formatTimestamp(value)}</Text>;
+    }
+    
+    if (key === 'status') {
+      return <Text style={[styles.valueText, styles.statusBadge]}>{value}</Text>;
+    }
+    
+    return <Text style={styles.valueText}>{String(value)}</Text>;
+  }
 
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchHealth();
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#4CAF50" />
+        <Text style={styles.loadingText}>Carregando dados do servidor...</Text>
+      </View>
+    );
+  }
+
+  if (error && !healthData) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Erro</Text>
+        <Text style={styles.errorMessage}>{error}</Text>
+        <TouchableOpacity onPress={fetchHealth} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>🔄 Tentar Novamente</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} />
+      }
+    >
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Health Monitor</Text>
+        <Text style={styles.headerSubtitle}>{healthUrl}</Text>
+      </View>
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </View>
+      )}
+
+      {healthData && (
+        <View style={styles.dataContainer}>
+          {Object.entries(healthData).map(([key, value]) => {
+            const isObject = typeof value === 'object' && value !== null;
+            const isCollapsed = collapsedSections[key] || false;
+            
+            return (
+              <TouchableOpacity 
+                key={key} 
+                style={styles.dataRow}
+                onPress={() => isObject && toggleSection(key)}
+                activeOpacity={isObject ? 0.7 : 1}
+              >
+                <View style={styles.dataRowHeader}>
+                  <Text style={styles.keyText}>{key}</Text>
+                  {isObject && (
+                    <Text style={styles.collapseIcon}>
+                      {isCollapsed ? '▶' : '▼'}
+                    </Text>
+                  )}
+                </View>
+                {renderValue(key, value, isCollapsed)}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      <View style={styles.footer}>
+        <TouchableOpacity onPress={fetchHealth} style={styles.manualRefreshButton}>
+          <Text style={styles.manualRefreshText}>Atualizar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionsButton}
+          onPress={() => setShowActionsModal(true)}
+        >
+          <Text style={styles.actionsButtonText}>⋮</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Modal de Ações */}
+      <Modal
+        visible={showActionsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowActionsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Ações do Sistema</Text>
+              <TouchableOpacity onPress={() => setShowActionsModal(false)}>
+                <Text style={styles.closeButton}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Feedback de Ações */}
+              {actionFeedback && (
+                <View style={[
+                  styles.feedbackBanner,
+                  actionFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError
+                ]}>
+                  <Text style={styles.feedbackText}>
+                    {actionFeedback.message}
+                  </Text>
+                </View>
+              )}
+
+              {actionLoading && (
+                <View style={styles.loadingBanner}>
+                  <ActivityIndicator size="small" color="#999" />
+                  <Text style={styles.loadingBannerText}>Executando...</Text>
+                </View>
+              )}
+
+              {/* Gravação */}
+              <Text style={styles.sectionTitle}>GRAVAÇÃO</Text>
+              <View style={styles.actionRow}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => recordEvent('cam1', 10)}
+                  disabled={actionLoading}
+                >
+                  <Text style={styles.actionButtonText}>Câmera 1</Text>
+                  <Text style={styles.actionButtonSubtext}>10 segundos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => recordEvent('cam2', 10)}
+                  disabled={actionLoading}
+                >
+                  <Text style={styles.actionButtonText}>Câmera 2</Text>
+                  <Text style={styles.actionButtonSubtext}>10 segundos</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Processamento */}
+              <Text style={styles.sectionTitle}>PROCESSAMENTO</Text>
+              <TouchableOpacity 
+                style={styles.actionButtonFull}
+                onPress={() => processTimestamps(3)}
+                disabled={actionLoading}
+              >
+                <Text style={styles.actionButtonText}>Processar Timestamps</Text>
+                <Text style={styles.actionButtonSubtext}>Últimos 3 dias</Text>
+              </TouchableOpacity>
+
+              {/* Sistema */}
+              <Text style={styles.sectionTitle}>SISTEMA</Text>
+              <TouchableOpacity 
+                style={styles.actionButtonFull}
+                onPress={updateTime}
+                disabled={actionLoading}
+              >
+                <Text style={styles.actionButtonText}>Sincronizar Hora</Text>
+                <Text style={styles.actionButtonSubtext}>Atualiza hora do Raspberry Pi</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.actionButtonFull}
+                onPress={restartService}
+                disabled={actionLoading}
+              >
+                <Text style={styles.actionButtonText}>Reiniciar Serviço</Text>
+              </TouchableOpacity>
+
+              {/* Ações Críticas */}
+              <Text style={styles.sectionTitle}>CRÍTICO</Text>
+              <TouchableOpacity 
+                style={[styles.actionButtonFull, styles.actionButtonDanger]}
+                onPress={shutdownSystem}
+                disabled={actionLoading}
+              >
+                <Text style={styles.actionButtonText}>Desligar Sistema</Text>
+                <Text style={styles.actionButtonSubtext}>Delay de 10 segundos</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 10,
     backgroundColor: '#0b0809',
   },
-  item: {
-    marginBottom: 10,
-  },
-  thumbnail: {
-    width: '100%',
-    height: 200,
-    borderTopRightRadius: 5,
-    borderTopLeftRadius: 5,
-
-    backgroundColor: '#ccc',
-  },
-  placeholderThumbnail: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#ccc',
-    borderRadius: 5,
-  },
-  title: {
-    margin: 5,
-    fontSize: 16,
-    color: 'white',
-  },
-  videoContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#0b0809',
+    padding: 20,
   },
-  video: {
-    width: '100%',
-    height: 300,
+  header: {
+    backgroundColor: '#1a1a1a',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
-  videoTitle: {
-    marginTop: 10,
-    fontSize: 18,
+  headerTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: 'white',
-  },
-  videoDetails: {
-    flexDirection: 'row',
+    color: '#fff',
     marginBottom: 5,
-    // marginLeft: 5,
-    gap: 10,
-    backgroundColor: '#2f3034',
-    borderBottomRightRadius: 5,
-    borderBottomLeftRadius: 5,
   },
-  backButton: {
-    marginTop: 20,
-    padding: 10,
-    backgroundColor: '#ff6347',
-    borderRadius: 5,
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#888',
   },
-  backButtonText: {
-    color: 'white',
+  loadingText: {
+    marginTop: 10,
     fontSize: 16,
+    color: '#888',
+  },
+  errorText: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#F44336',
     textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 20,
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 20,
-  },
-  actionButton: {
-    padding: 10,
+  errorBanner: {
+    backgroundColor: '#F44336',
+    padding: 15,
+    margin: 10,
     borderRadius: 5,
-    margin: 5,
   },
-  actionButtonText: {
+  errorBannerText: {
     color: 'white',
     fontSize: 14,
     textAlign: 'center',
   },
-
+  retryButton: {
+    backgroundColor: '#333',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  dataContainer: {
+    padding: 15,
+  },
+  dataRow: {
+    backgroundColor: '#1a1a1a',
+    padding: 15,
+    marginBottom: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#555',
+  },
+  dataRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  collapseIcon: {
+    fontSize: 16,
+    color: '#999',
+    marginLeft: 10,
+  },
+  collapsedText: {
+    fontSize: 14,
+    color: '#888',
+    fontStyle: 'italic',
+    marginTop: 5,
+  },
+  keyText: {
+    fontSize: 14,
+    color: '#888',
+    textTransform: 'uppercase',
+    marginBottom: 5,
+    letterSpacing: 1,
+  },
+  valueText: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '500',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    alignSelf: 'flex-start',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    backgroundColor: '#2f3034',
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  nestedObject: {
+    backgroundColor: '#0d0d0d',
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 5,
+  },
+  nestedRow: {
+    flexDirection: 'row',
+    marginBottom: 5,
+  },
+  nestedKeyText: {
+    fontSize: 14,
+    color: '#666',
+    marginRight: 10,
+  },
+  nestedValueText: {
+    fontSize: 14,
+    color: '#CCC',
+    flex: 1,
+  },
+  footer: {
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  manualRefreshButton: {
+    flex: 1,
+    backgroundColor: '#2f3034',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#555',
+    alignItems: 'center',
+  },
+  manualRefreshText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  actionsButton: {
+    backgroundColor: '#2f3034',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#555',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 50,
+  },
+  actionsButtonText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  closeButton: {
+    fontSize: 24,
+    color: '#888',
+    paddingHorizontal: 10,
+  },
+  modalBody: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#999',
+    marginTop: 20,
+    marginBottom: 10,
+    letterSpacing: 1,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: '#2f3034',
+    padding: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#555',
+    alignItems: 'center',
+  },
+  actionButtonFull: {
+    backgroundColor: '#2f3034',
+    padding: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#555',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  actionButtonSuccess: {
+    borderColor: '#555',
+    backgroundColor: '#2f3034',
+  },
+  actionButtonWarning: {
+    borderColor: '#555',
+    backgroundColor: '#2f3034',
+  },
+  actionButtonDanger: {
+    borderColor: '#666',
+    backgroundColor: '#3a1a1a',
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  actionButtonSubtext: {
+    color: '#888',
+    fontSize: 11,
+    marginTop: 5,
+  },
+  feedbackBanner: {
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  feedbackSuccess: {
+    backgroundColor: '#1a2a1a',
+    borderWidth: 1,
+    borderColor: '#3a4a3a',
+  },
+  feedbackError: {
+    backgroundColor: '#2a1a1a',
+    borderWidth: 1,
+    borderColor: '#4a3a3a',
+  },
+  feedbackText: {
+    color: 'white',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  loadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    backgroundColor: 'rgba(100, 100, 100, 0.3)',
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  loadingBannerText: {
+    color: '#888',
+    fontSize: 14,
+    marginLeft: 10,
+  },
 });
 

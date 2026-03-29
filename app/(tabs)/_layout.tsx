@@ -39,10 +39,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="videosScreen"
         options={{
-          title: 'videos',
+          title: 'health',
           tabBarIcon: ({ color }) =>
-            <MaterialIcons name="video-collection" size={28} color={color} />
-          // tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+            <MaterialIcons name="monitor-heart" size={28} color={color} />
         }}
       />
     </Tabs>
