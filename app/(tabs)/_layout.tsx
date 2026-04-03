@@ -1,49 +1,32 @@
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 import React from 'react';
-import { Platform, View } from 'react-native';
 
-import { HapticTab } from '../../components/HapticTab';
-import { IconSymbol } from '../../components/ui/IconSymbol';
-import TabBarBackground from '../../components/ui/TabBarBackground';
-
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-
-// import { Colors } from '@/constants/Colors';
-// import { useColorScheme } from '@/hooks/useColorScheme';
-
-export default function TabLayout() {
-  // const colorScheme = useColorScheme();
-
+export default function StackLayout() {
   return (
-    <Tabs
+    <Stack
       screenOptions={{
-        // tabBarActiveTintColor: '#0b0809',
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: () => (<View style={{ flex: 1, backgroundColor: '#c3c3c3' }}></View>),
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
-          },
-          default: {},
-        }),
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: '#ffffff',
+        },
+        headerTintColor: '#1a1a1a',
+        headerTitleStyle: {
+          fontWeight: '600',
+        },
+        headerShadowVisible: true,
       }}>
-      <Tabs.Screen
+      <Stack.Screen
         name="index"
         options={{
-          title: 'ao vivo',
-          tabBarIcon: ({ color }) => <MaterialIcons size={28} name="videocam" color={color} />,
+          title: 'Câmeras ao Vivo',
         }}
       />
-      <Tabs.Screen
+      <Stack.Screen
         name="videosScreen"
         options={{
-          title: 'health',
-          tabBarIcon: ({ color }) =>
-            <MaterialIcons name="monitor-heart" size={28} color={color} />
+          title: 'Health Monitor',
         }}
       />
-    </Tabs>
+    </Stack>
   );
 }

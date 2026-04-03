@@ -1,11 +1,14 @@
-import { StyleSheet, View, Text, Alert, TouchableOpacity, Dimensions, Modal, TextInput } from 'react-native';
+import { StyleSheet, View, Text, Alert, TouchableOpacity, Dimensions, Modal, TextInput, ScrollView, Animated } from 'react-native';
 import { VLCPlayer } from 'react-native-vlc-media-player';
 import { NetworkInfo } from 'react-native-network-info';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { requestPermissions } from '@/utils/android/requestPermissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 
 export default function Index() {
+  const router = useRouter();
   const [isConnectedToBTS, setIsConnectedToBTS] = useState(false);
   const [player1Status, setPlayer1Status] = useState('loading');
   const [player2Status, setPlayer2Status] = useState('loading');
@@ -15,11 +18,53 @@ export default function Index() {
   const [serverIP, setServerIP] = useState('192.168.1.187');
   const [showIPModal, setShowIPModal] = useState(false);
   const [tempIP, setTempIP] = useState('192.168.1.187');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+
+  // Animação para o indicador de gravação
+  const recordingOpacity = useRef(new Animated.Value(1)).current;
 
   // Carregar IP salvo ao iniciar
   useEffect(() => {
     loadServerIP();
   }, []);
+
+  // Verificar status de gravação quando o IP mudar
+  useEffect(() => {
+    checkRecordingStatus();
+  }, [serverIP]);
+
+  // Animação de piscar quando estiver gravando
+  useEffect(() => {
+    if (isRecording) {
+      const blinkAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(recordingOpacity, {
+            toValue: 0.2,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(recordingOpacity, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      blinkAnimation.start();
+      return () => blinkAnimation.stop();
+    } else {
+      recordingOpacity.setValue(1);
+    }
+  }, [isRecording]);
+
+  // Verificar status de gravação quando a tela ganhar foco
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[Index] Tela ganhou foco, verificando status de gravação...');
+      checkRecordingStatus();
+    }, [serverIP])
+  );
 
   async function loadServerIP() {
     try {
@@ -31,6 +76,34 @@ export default function Index() {
       }
     } catch (error) {
       console.error('[Config] Erro ao carregar IP:', error);
+    }
+  }
+
+  async function checkRecordingStatus() {
+    try {
+      const response = await fetch(`http://${serverIP}:5000/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[Recording] Status health:', data);
+        // Verifica se está gravando baseado no status do health
+        if (data.status === 'healthy') {
+          setIsRecording(true);
+        } else {
+          setIsRecording(false);
+        }
+      } else {
+        console.log('[Recording] Servidor não respondeu, assumindo não gravando');
+        setIsRecording(false);
+      }
+    } catch (error) {
+      console.error('[Recording] Erro ao verificar status:', error);
+      setIsRecording(false);
     }
   }
 
@@ -97,7 +170,7 @@ export default function Index() {
   const streamUrl2 = `rtsp://${serverIP}:8554/live/stream2`;
 
   console.log('[VLC] Iniciando players (tentativa #' + retryKey + ') com URLs:', streamUrl1, streamUrl2);
-  
+
   function handleRetry() {
     console.log('[VLC] Reiniciando players...');
     setPlayer1Status('loading');
@@ -111,7 +184,51 @@ export default function Index() {
     setTempIP(serverIP);
     setShowIPModal(true);
   }
-  
+
+  async function handleStartRecording() {
+    try {
+      const response = await fetch(`http://${serverIP}:5000/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setIsRecording(true);
+        Alert.alert('Sucesso', 'Gravação iniciada com sucesso!');
+      } else {
+        const errorText = await response.text();
+        Alert.alert('Erro', `Falha ao iniciar gravação: ${errorText}`);
+      }
+    } catch (error) {
+      console.error('[Recording] Erro ao iniciar gravação:', error);
+      Alert.alert('Erro', 'Não foi possível conectar ao servidor de gravação');
+    }
+  }
+
+  async function handleStopRecording() {
+    try {
+      const response = await fetch(`http://${serverIP}:5000/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setIsRecording(false);
+        Alert.alert('Sucesso', 'Gravação parada com sucesso!');
+      } else {
+        const errorText = await response.text();
+        Alert.alert('Erro', `Falha ao parar gravação: ${errorText}`);
+      }
+    } catch (error) {
+      console.error('[Recording] Erro ao parar gravação:', error);
+      Alert.alert('Erro', 'Não foi possível conectar ao servidor de gravação');
+    }
+  }
+
   useEffect(() => {
     console.log('🔄 Player 1 Status mudou para:', player1Status);
     console.log('🔄 Player 2 Status mudou para:', player2Status);
@@ -143,179 +260,234 @@ export default function Index() {
   // }
 
   return (
-    <View style={styles.container}>
-      <Text style={{ color: 'white', fontSize: 20 }}>{isConnectedToBTS ? 'Conectado' : 'Desconectado'}</Text>
-      <Text style={styles.title}>Cameras ao vivo</Text>
-      
-      <TouchableOpacity 
-        onPress={handleRetry}
-        style={{ backgroundColor: '#4CAF50', padding: 10, borderRadius: 5, marginBottom: 10 }}
-      >
-        <Text style={{ color: 'white', fontWeight: 'bold' }}>🔄 Recarregar Câmeras</Text>
-      </TouchableOpacity>
-      
-      <View style={styles.cameraView}>
-        <View style={styles.videoContainer}>
-          <VLCPlayer
-            key={`player1-${retryKey}`}
-            source={{ 
-              uri: streamUrl1,
-              initOptions: [
-                '--rtsp-tcp',
-                '--network-caching=1000',
-                '--rtsp-caching=1000',
-                '--live-caching=1000',
-                '--no-rtsp-kasenna',
-                '--rtsp-frame-buffer-size=500000',
-                '--verbose=2',
-              ]
-            }}
-            autoplay={true}
-            autoAspectRatio={true}
-            resizeMode="contain"
-            videoAspectRatio="16:9"
-            style={styles.vlcPlayer}
-            onError={(e) => {
-              const errorMsg = JSON.stringify(e, null, 2);
-              console.error('❌ VLC Player 1 Error:', errorMsg);
-              console.error('❌ Error details:', {
-                isPlaying: e?.isPlaying,
-                currentTime: e?.currentTime,
-                duration: e?.duration,
-                target: e?.target,
-                type: e?.type,
-              });
-              setPlayer1Status('error');
-              setPlayer1Error(errorMsg);
-            }}
-            onPlaying={() => {
-              console.log('✅ VLC Player 1 Playing');
-              setPlayer1Status('playing');
-            }}
-            onBuffering={() => {
-              console.log('⏳ VLC Player 1 Buffering');
-              setPlayer1Status('buffering');
-            }}
-            onPaused={() => {
-              console.log('⏸️ VLC Player 1 Paused');
-              setPlayer1Status('paused');
-            }}
-            onStopped={() => {
-              console.log('⏹️ VLC Player 1 Stopped');
-              setPlayer1Status('stopped');
-            }}
-            onLoad={(data) => {
-              console.log('📥 VLC Player 1 Loaded:', JSON.stringify(data));
-            }}
-          />
-        </View>
-        <View style={styles.videoDetails}>
-          <Text style={styles.cameraText}>Camera 1</Text>
-          <Text style={{ color: player1Status === 'playing' ? '#4CAF50' : (player1Status === 'error' ? '#F44336' : '#FFA726'), fontSize: 12, marginLeft: 10 }}>
-            • {player1Status}
-          </Text>
-          {player1Error !== '' && (
-            <Text style={{ color: '#F44336', fontSize: 10, marginTop: 5, flex: 1 }} numberOfLines={2}>
-              {player1Error}
-            </Text>
-          )}
-        </View>
-      </View>
-      
-      <View style={styles.cameraView}>
-        <View style={styles.videoContainer}>
-          <VLCPlayer
-            key={`player2-${retryKey}`}
-            source={{ 
-              uri: streamUrl2,
-              initOptions: [
-                '--rtsp-tcp',
-                '--network-caching=1000',
-                '--rtsp-caching=1000',
-                '--live-caching=1000',
-                '--no-rtsp-kasenna',
-                '--rtsp-frame-buffer-size=500000',
-                '--verbose=2',
-              ]
-            }}
-            autoplay={true}
-            autoAspectRatio={true}
-            resizeMode="contain"
-            videoAspectRatio="16:9"
-            style={styles.vlcPlayer}
-            onError={(e) => {
-              const errorMsg = JSON.stringify(e, null, 2);
-              console.error('❌ VLC Player 2 Error:', errorMsg);
-              console.error('❌ Error details:', {
-                isPlaying: e?.isPlaying,
-                currentTime: e?.currentTime,
-                duration: e?.duration,
-                target: e?.target,
-                type: e?.type,
-              });
-              setPlayer2Status('error');
-              setPlayer2Error(errorMsg);
-            }}
-            onPlaying={() => {
-              console.log('✅ VLC Player 2 Playing');
-              setPlayer2Status('playing');
-            }}
-            onBuffering={() => {
-              console.log('⏳ VLC Player 2 Buffering');
-              setPlayer2Status('buffering');
-            }}
-            onPaused={() => {
-              console.log('⏸️ VLC Player 2 Paused');
-              setPlayer2Status('paused');
-            }}
-            onStopped={() => {
-              console.log('⏹️ VLC Player 2 Stopped');
-              setPlayer2Status('stopped');
-            }}
-            onLoad={(data) => {
-              console.log('📥 VLC Player 2 Loaded:', JSON.stringify(data));
-            }}
-          />
-        </View>
-        <View style={styles.videoDetails}>
-          <Text style={styles.cameraText}>Camera 2</Text>
-          <Text style={{ color: player2Status === 'playing' ? '#4CAF50' : (player2Status === 'error' ? '#F44336' : '#FFA726'), fontSize: 12, marginLeft: 10 }}>
-            • {player2Status}
-          </Text>
-          {player2Error !== '' && (
-            <Text style={{ color: '#F44336', fontSize: 10, marginTop: 5, flex: 1 }} numberOfLines={2}>
-              {player2Error}
-            </Text>
-          )}
-        </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      {/* Action Card */}
+      <View style={styles.card}>
+        <TouchableOpacity
+          style={styles.cardHeader}
+          onPress={() => setIsControlsCollapsed(!isControlsCollapsed)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cardTitle}>Controles</Text>
+          <Text style={styles.collapseIcon}>{isControlsCollapsed ? '▼' : '▲'}</Text>
+        </TouchableOpacity>
+
+        {!isControlsCollapsed && (
+          <>
+            <TouchableOpacity
+              onPress={handleRetry}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Recarregar Câmeras</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={isRecording ? handleStopRecording : handleStartRecording}
+              style={[styles.primaryButton, isRecording && styles.warningButton]}
+            >
+              <View style={styles.buttonContent}>
+                <View style={[styles.statusIndicator, isRecording && styles.statusIndicatorActive]} />
+                <Text style={styles.primaryButtonText}>
+                  {isRecording ? 'Parar Gravação' : 'Iniciar Gravação'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/videosScreen')}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Health Monitor</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.tertiaryButton}
+              onPress={openIPSettings}
+            >
+              <Text style={styles.tertiaryButtonText}>Configurar IP</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
-      {/* Botão de Configuração de IP */}
-      <TouchableOpacity 
-        style={styles.configButton}
-        onPress={openIPSettings}
-      >
-        <Text style={styles.configButtonText}>⚙ Configurar IP</Text>
-      </TouchableOpacity>
+      {/* Cameras Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitleStandalone}>Câmeras ao Vivo</Text>
+
+        {/* Camera 1 */}
+        <View style={styles.cameraSection}>
+          <View style={styles.videoContainer}>
+            <VLCPlayer
+              key={`player1-${retryKey}`}
+              source={{
+                uri: streamUrl1,
+                initOptions: [
+                  '--rtsp-tcp',
+                  '--network-caching=1000',
+                  '--rtsp-caching=1000',
+                  '--live-caching=1000',
+                  '--no-rtsp-kasenna',
+                  '--rtsp-frame-buffer-size=500000',
+                  '--verbose=2',
+                ]
+              }}
+              autoplay={true}
+              autoAspectRatio={true}
+              resizeMode="contain"
+              videoAspectRatio="16:9"
+              style={styles.vlcPlayer}
+              onError={(e: any) => {
+                const errorMsg = JSON.stringify(e, null, 2);
+                console.error('VLC Player 1 Error:', errorMsg);
+                setPlayer1Status('error');
+                setPlayer1Error(errorMsg);
+              }}
+              onPlaying={() => {
+                console.log('VLC Player 1 Playing');
+                setPlayer1Status('playing');
+              }}
+              onBuffering={() => {
+                console.log('VLC Player 1 Buffering');
+                setPlayer1Status('buffering');
+              }}
+              onPaused={() => {
+                console.log('VLC Player 1 Paused');
+                setPlayer1Status('paused');
+              }}
+              onStopped={() => {
+                console.log('VLC Player 1 Stopped');
+                setPlayer1Status('stopped');
+              }}
+              onLoad={(data) => {
+                console.log('VLC Player 1 Loaded:', JSON.stringify(data));
+              }}
+            />
+
+            <View style={styles.videoOverlay}>
+              <View style={styles.overlayTop}>
+                <View style={styles.cameraLabelContainer}>
+                  {isRecording && (
+                    <Animated.View style={[styles.recordingIndicator, { opacity: recordingOpacity }]} />
+                  )}
+                  <Text style={styles.cameraLabel}>Câmera 1</Text>
+                </View>
+                <View style={styles.statusBadgeOverlay}>
+                  <View style={[
+                    styles.statusDot,
+                    player1Status === 'playing' && styles.statusDotPlaying,
+                    player1Status === 'error' && styles.statusDotError,
+                  ]} />
+                  <Text style={styles.statusTextOverlay}>{player1Status}</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {player1Error !== '' && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText} numberOfLines={2}>{player1Error}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Camera 2 */}
+        <View style={styles.cameraSection}>
+          <View style={styles.videoContainer}>
+            <VLCPlayer
+              key={`player2-${retryKey}`}
+              source={{
+                uri: streamUrl2,
+                initOptions: [
+                  '--rtsp-tcp',
+                  '--network-caching=1000',
+                  '--rtsp-caching=1000',
+                  '--live-caching=1000',
+                  '--no-rtsp-kasenna',
+                  '--rtsp-frame-buffer-size=500000',
+                  '--verbose=2',
+                ]
+              }}
+              autoplay={true}
+              autoAspectRatio={true}
+              resizeMode="contain"
+              videoAspectRatio="16:9"
+              style={styles.vlcPlayer}
+              onError={(e: any) => {
+                const errorMsg = JSON.stringify(e, null, 2);
+                console.error('VLC Player 2 Error:', errorMsg);
+                setPlayer2Status('error');
+                setPlayer2Error(errorMsg);
+              }}
+              onPlaying={() => {
+                console.log('VLC Player 2 Playing');
+                setPlayer2Status('playing');
+              }}
+              onBuffering={() => {
+                console.log('VLC Player 2 Buffering');
+                setPlayer2Status('buffering');
+              }}
+              onPaused={() => {
+                console.log('VLC Player 2 Paused');
+                setPlayer2Status('paused');
+              }}
+              onStopped={() => {
+                console.log('VLC Player 2 Stopped');
+                setPlayer2Status('stopped');
+              }}
+              onLoad={(data) => {
+                console.log('VLC Player 2 Loaded:', JSON.stringify(data));
+              }}
+            />
+
+            <View style={styles.videoOverlay}>
+              <View style={styles.overlayTop}>
+                <View style={styles.cameraLabelContainer}>
+                  {isRecording && (
+                    <Animated.View style={[styles.recordingIndicator, { opacity: recordingOpacity }]} />
+                  )}
+                  <Text style={styles.cameraLabel}>Câmera 2</Text>
+                </View>
+                <View style={styles.statusBadgeOverlay}>
+                  <View style={[
+                    styles.statusDot,
+                    player2Status === 'playing' && styles.statusDotPlaying,
+                    player2Status === 'error' && styles.statusDotError,
+                  ]} />
+                  <Text style={styles.statusTextOverlay}>{player2Status}</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {player2Error !== '' && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText} numberOfLines={2}>{player2Error}</Text>
+            </View>
+          )}
+        </View>
+      </View>
 
       {/* Modal de Configuração de IP */}
       <Modal
         visible={showIPModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setShowIPModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Configurar IP do Servidor</Text>
+              <Text style={styles.modalTitle}>Configurar Servidor</Text>
               <TouchableOpacity onPress={() => setShowIPModal(false)}>
                 <Text style={styles.closeButton}>×</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Endereço IP:</Text>
+              <Text style={styles.modalLabel}>Endereço IP</Text>
               <TextInput
                 style={styles.ipInput}
                 value={tempIP}
@@ -326,131 +498,263 @@ export default function Index() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Text style={styles.modalHint}>
-                IP atual: {serverIP}
-              </Text>
-              <Text style={styles.modalHint}>
-                Formato: 192.168.1.1
-              </Text>
+              <Text style={styles.modalHint}>IP atual: {serverIP}</Text>
             </View>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
+              <TouchableOpacity
+                style={styles.modalCancelButton}
                 onPress={() => {
                   setTempIP(serverIP);
                   setShowIPModal(false);
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                <Text style={styles.modalCancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveButton}
+              <TouchableOpacity
+                style={styles.modalSaveButton}
                 onPress={validateAndSaveIP}
               >
-                <Text style={styles.saveButtonText}>Salvar</Text>
+                <Text style={styles.modalSaveButtonText}>Salvar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
-
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    backgroundColor: '#0b0809',
-    alignItems: 'center',
-  }, container_message_wifi: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: '#0b0809',
-    alignItems: 'center',
-    gap: 10,
-    padding: 10,
+    backgroundColor: '#f5f5f5',
   },
-  title: {
-    color: 'white',
-    fontSize: 20,
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+
+  // Card styles
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  cardTitleStandalone: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 16,
+  },
+  collapseIcon: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontWeight: '600',
+  },
+
+  // Button styles
+  primaryButton: {
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  warningButton: {
+    backgroundColor: '#dc3545',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
-    marginVertical: 10,
   },
-  cameraView: {
-    paddingVertical: 20,
-    paddingHorizontal: 10,
+  secondaryButton: {
+    backgroundColor: '#f8f9fa',
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  secondaryButtonText: {
+    color: '#495057',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  tertiaryButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  tertiaryButtonText: {
+    color: '#6c757d',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#6c757d',
+    marginRight: 8,
+  },
+  statusIndicatorActive: {
+    backgroundColor: '#ffffff',
   },
 
+  // Camera styles
+  cameraSection: {
+    marginBottom: 24,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#dee2e6',
+    marginVertical: 20,
+  },
   videoContainer: {
-    backgroundColor: 'black',
-    borderTopEndRadius: 10,
-    borderTopStartRadius: 10,
+    backgroundColor: '#000000',
+    borderRadius: 8,
     overflow: 'hidden',
-    width: Dimensions.get('window').width - 20,
-    height: (Dimensions.get('window').width - 20) * 9 / 16,
+    width: '100%',
+    aspectRatio: 16 / 9,
+    position: 'relative',
   },
-
   vlcPlayer: {
     width: '100%',
     height: '100%',
   },
-
-  video: {
-    alignSelf: 'center',
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: 'black',
-    borderTopEndRadius: 10,
-    borderTopStartRadius: 10,
+  videoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
   },
-  videoDetails: {
+  overlayTop: {
     flexDirection: 'row',
-    padding: 10,
-    backgroundColor: '#2f3034',
-    borderBottomEndRadius: 10,
-    borderBottomStartRadius: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
-  cameraText: {
-    color: 'white',
-    fontSize: 16,
-    marginTop: 2,
+  cameraLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  warningText: {
-    color: 'red',
-    fontSize: 18,
-    textAlign: 'center',
-    marginHorizontal: 20,
-  },
-  configButton: {
-    backgroundColor: '#2f3034',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  recordingIndicator: {
+    width: 10,
+    height: 10,
     borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#555',
-    marginTop: 20,
-    marginBottom: 20,
+    backgroundColor: '#dc3545',
   },
-  configButtonText: {
-    color: '#fff',
+  cameraLabel: {
     fontSize: 14,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: '600',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
+  statusBadgeOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusTextOverlay: {
+    fontSize: 11,
+    color: '#ffffff',
+    textTransform: 'capitalize',
+    fontWeight: '500',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#adb5bd',
+    marginRight: 6,
+  },
+  statusDotPlaying: {
+    backgroundColor: '#28a745',
+  },
+  statusDotError: {
+    backgroundColor: '#dc3545',
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#495057',
+    textTransform: 'capitalize',
+    fontWeight: '500',
+  },
+  errorContainer: {
+    marginTop: 8,
+    padding: 12,
+    backgroundColor: '#fff5f5',
+    borderRadius: 6,
+    borderLeftWidth: 3,
+    borderLeftColor: '#dc3545',
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#721c24',
+    lineHeight: 16,
+  },
+
+  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 16,
   },
   modalContent: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    width: '85%',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    width: '100%',
     maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -458,77 +762,77 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#dee2e6',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '600',
+    color: '#1a1a1a',
   },
   closeButton: {
-    fontSize: 28,
-    color: '#888',
-    paddingHorizontal: 10,
+    fontSize: 32,
+    color: '#adb5bd',
+    lineHeight: 32,
+    width: 32,
+    textAlign: 'center',
   },
   modalBody: {
     padding: 20,
   },
   modalLabel: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: 13,
+    color: '#6c757d',
     marginBottom: 8,
+    fontWeight: '500',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   ipInput: {
-    backgroundColor: '#2f3034',
+    backgroundColor: '#f8f9fa',
     borderWidth: 1,
-    borderColor: '#555',
-    borderRadius: 5,
-    padding: 12,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    padding: 14,
     fontSize: 16,
-    color: '#fff',
-    marginBottom: 10,
+    color: '#1a1a1a',
+    marginBottom: 12,
   },
   modalHint: {
     fontSize: 12,
-    color: '#666',
-    marginBottom: 5,
+    color: '#adb5bd',
+    marginBottom: 4,
   },
   modalFooter: {
     flexDirection: 'row',
     padding: 20,
-    gap: 10,
+    gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#333',
+    borderTopColor: '#dee2e6',
   },
-  cancelButton: {
+  modalCancelButton: {
     flex: 1,
-    backgroundColor: '#2f3034',
-    paddingVertical: 12,
-    borderRadius: 5,
+    backgroundColor: '#f8f9fa',
+    paddingVertical: 14,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#555',
+    borderColor: '#dee2e6',
   },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  modalCancelButtonText: {
+    color: '#495057',
+    fontSize: 15,
+    fontWeight: '500',
     textAlign: 'center',
   },
-  saveButton: {
+  modalSaveButton: {
     flex: 1,
-    backgroundColor: '#2f3034',
-    paddingVertical: 12,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#555',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 14,
+    borderRadius: 8,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  modalSaveButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
   },
-
 });
