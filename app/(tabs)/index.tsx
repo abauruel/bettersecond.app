@@ -59,12 +59,13 @@ export default function Index() {
     }
   }, [isRecording]);
 
-  // Verificar status de gravação quando a tela ganhar foco
+  // Verificar status de gravação e recarregar IP quando a tela ganhar foco
   useFocusEffect(
     useCallback(() => {
-      console.log('[Index] Tela ganhou foco, verificando status de gravação...');
+      console.log('[Index] Tela ganhou foco, recarregando dados...');
+      loadServerIP();
       checkRecordingStatus();
-    }, [serverIP])
+    }, [])
   );
 
   async function loadServerIP() {

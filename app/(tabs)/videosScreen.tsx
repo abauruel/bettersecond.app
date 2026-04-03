@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, ScrollView, TouchableOpacity, Text, ActivityIndicator, RefreshControl, Modal, Alert, TextInput } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 
 // Define a estrutura dos dados de health
 interface HealthData {
@@ -41,6 +42,14 @@ export default function HealthScreen() {
       fetchHealth();
     }
   }, [serverIP, ipLoaded]);
+
+  // Recarregar IP do AsyncStorage sempre que a tela ganhar foco
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[Health] Tela ganhou foco, recarregando IP...');
+      loadServerIP();
+    }, [])
+  );
 
   async function loadServerIP() {
     try {
