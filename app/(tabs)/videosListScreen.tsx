@@ -26,7 +26,7 @@ export default function VideosListScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [videos, setVideos] = useState<VideoInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [serverIP, setServerIP] = useState('192.168.1.187');
+  const [serverIP, setServerIP] = useState('10.42.0.1');
   const [ipLoaded, setIpLoaded] = useState(false);
 
   const baseUrl = `http://${serverIP}:5000`;
