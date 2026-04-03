@@ -27,6 +27,12 @@ export default function StackLayout() {
           title: 'Health Monitor',
         }}
       />
+      <Stack.Screen
+        name="videosListScreen"
+        options={{
+          title: 'Vídeos Gravados',
+        }}
+      />
     </Stack>
   );
 }

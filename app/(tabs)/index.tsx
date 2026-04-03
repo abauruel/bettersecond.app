@@ -6,6 +6,7 @@ import { requestPermissions } from '@/utils/android/requestPermissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
+import { Feather } from '@expo/vector-icons';
 
 export default function Index() {
   const router = useRouter();
@@ -290,7 +291,11 @@ export default function Index() {
           activeOpacity={0.7}
         >
           <Text style={styles.cardTitle}>Controles</Text>
-          <Text style={styles.collapseIcon}>{isControlsCollapsed ? '▼' : '▲'}</Text>
+          <Feather
+            name={isControlsCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={20}
+            color="#6c757d"
+          />
         </TouchableOpacity>
 
         {!isControlsCollapsed && (
@@ -329,6 +334,13 @@ export default function Index() {
               style={styles.secondaryButton}
             >
               <Text style={styles.secondaryButtonText}>Health Monitor</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/videosListScreen')}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Vídeos Gravados</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

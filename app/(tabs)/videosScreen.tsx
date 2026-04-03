@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, ScrollView, TouchableOpacity, Text, ActivityIndicator, RefreshControl, Modal, Alert, TextInput } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
 
 // Define a estrutura dos dados de health
 interface HealthData {
@@ -529,9 +530,11 @@ export default function HealthScreen() {
                 <View style={styles.dataRowHeader}>
                   <Text style={styles.keyText}>{key}</Text>
                   {isObject && (
-                    <Text style={styles.collapseIcon}>
-                      {isCollapsed ? '▶' : '▼'}
-                    </Text>
+                    <Feather
+                      name={isCollapsed ? 'chevron-right' : 'chevron-down'}
+                      size={20}
+                      color="#6c757d"
+                    />
                   )}
                 </View>
                 {renderValue(key, value, isCollapsed)}
