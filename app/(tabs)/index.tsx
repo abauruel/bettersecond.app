@@ -229,6 +229,27 @@ export default function Index() {
     }
   }
 
+  async function handleRecordEvent() {
+    try {
+      const response = await fetch(`http://${serverIP}:5000/record`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        Alert.alert('Sucesso', 'Evento registrado com sucesso!');
+      } else {
+        const errorText = await response.text();
+        Alert.alert('Erro', `Falha ao registrar evento: ${errorText}`);
+      }
+    } catch (error) {
+      console.error('[Recording] Erro ao registrar evento:', error);
+      Alert.alert('Erro', 'Não foi possível conectar ao servidor');
+    }
+  }
+
   useEffect(() => {
     console.log('🔄 Player 1 Status mudou para:', player1Status);
     console.log('🔄 Player 2 Status mudou para:', player2Status);
@@ -281,17 +302,27 @@ export default function Index() {
               <Text style={styles.secondaryButtonText}>Recarregar Câmeras</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={isRecording ? handleStopRecording : handleStartRecording}
-              style={[styles.primaryButton, isRecording && styles.warningButton]}
-            >
-              <View style={styles.buttonContent}>
-                <View style={[styles.statusIndicator, isRecording && styles.statusIndicatorActive]} />
-                <Text style={styles.primaryButtonText}>
-                  {isRecording ? 'Parar Gravação' : 'Iniciar Gravação'}
-                </Text>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                onPress={isRecording ? handleStopRecording : handleStartRecording}
+                style={[styles.primaryButtonHalf, isRecording && styles.warningButton]}
+              >
+                <View style={styles.buttonContent}>
+                  <View style={[styles.statusIndicator, isRecording && styles.statusIndicatorActive]} />
+                  <Text style={styles.primaryButtonText}>
+                    {isRecording ? 'Parar' : 'Gravar'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleRecordEvent}
+                style={[styles.secondaryButtonHalf, !isRecording && styles.disabledButton]}
+                disabled={!isRecording}
+              >
+                <Text style={[styles.secondaryButtonText, !isRecording && styles.disabledButtonText]}>Marcar Evento</Text>
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               onPress={() => router.push('/videosScreen')}
@@ -571,11 +602,22 @@ const styles = StyleSheet.create({
   },
 
   // Button styles
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
   primaryButton: {
     backgroundColor: '#1a1a1a',
     paddingVertical: 14,
     borderRadius: 8,
     marginBottom: 12,
+  },
+  primaryButtonHalf: {
+    flex: 1,
+    backgroundColor: '#28a745',
+    paddingVertical: 14,
+    borderRadius: 8,
   },
   warningButton: {
     backgroundColor: '#dc3545',
@@ -591,6 +633,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 8,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  secondaryButtonHalf: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    paddingVertical: 14,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#dee2e6',
   },
@@ -610,6 +660,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#e9ecef',
+    borderColor: '#dee2e6',
+    opacity: 0.6,
+  },
+  disabledButtonText: {
+    color: '#adb5bd',
   },
   buttonContent: {
     flexDirection: 'row',
